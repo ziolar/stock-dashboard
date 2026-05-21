@@ -106,58 +106,50 @@ def get_realtime_quotes_batch(codes: list[str]) -> list[dict]:
     return results
 
 
-# ── K-line (stooq via akshare) ──────────────────────────────
+# ── K-line (Sina finance) ───────────────────────────────────
+
+_SINA_KLINE_URL = 'https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData'
 
 def get_kline(code: str, period: str = 'daily', count: int = 120) -> list[dict]:
-    """
-    获取K线数据，period: daily / weekly / monthly
-    使用 akshare stock_zh_a_daily (stooq 数据源)
-    """
-    if not _AK_OK:
-        return []
+    """获取K线数据，使用新浪财经接口"""
     prefix, pure = _normalize_code(code)
-    sym = prefix + pure       # e.g. sh600519
-
-    # Period aggregation
+    sym = prefix + pure
+    scale_map = {'daily': 240, 'weekly': 1200, 'monthly': 4800}
+    scale = scale_map.get(period, 240)
+    url = (f'{_SINA_KLINE_URL}?symbol={sym}&scale={scale}'
+           f'&datalen={count}&ma=no')
+    req = urllib.request.Request(url, headers={'Referer': 'http://finance.sina.com.cn', 'User-Agent': 'Mozilla/5.0'})
     try:
-        df = ak.stock_zh_a_daily(symbol=sym, adjust='qfq')
+        resp = urllib.request.urlopen(req, timeout=10)
+        raw = resp.read().decode('utf-8', errors='replace')
     except Exception:
         return []
 
-    if df is None or df.empty:
+    # Response: [{"d":"2024-01-02","o":"...","h":"...","l":"...","c":"...","v":"..."},...]
+    import json
+    try:
+        items = json.loads(raw)
+    except Exception:
         return []
 
-    df = df.copy()
-    df['date'] = df['date'].astype(str)
-
-    if period in ('weekly', 'monthly'):
-        import pandas as pd
-        df.index = pd.to_datetime(df['date'])
-        rule = 'W' if period == 'weekly' else 'ME'
-        df = df.resample(rule).agg({
-            'date': 'last', 'open': 'first', 'high': 'max',
-            'low': 'min', 'close': 'last', 'volume': 'sum',
-            'amount': 'sum',
-        }).dropna().reset_index(drop=True)
-
-    df = df.tail(count)
     result = []
-    for _, row in df.iterrows():
-        d = str(row.get('date', ''))
-        if isinstance(d, float):
-            d = '--'
-        o = float(row.get('open',  0) or 0)
-        c = float(row.get('close', 0) or 0)
-        result.append({
-            'date':   d,
-            'open':   o,
-            'close':  c,
-            'high':   float(row.get('high',   0) or 0),
-            'low':    float(row.get('low',    0) or 0),
-            'volume': float(row.get('volume', 0) or 0),
-            'amount': float(row.get('amount', 0) or 0),
-            'change_pct': 0.0,
-        })
+    prev_close = None
+    for item in items:
+        try:
+            o = float(item.get('o', 0) or 0)
+            c = float(item.get('c', 0) or 0)
+            h = float(item.get('h', 0) or 0)
+            l = float(item.get('l', 0) or 0)
+            v = float(item.get('v', 0) or 0)
+            chg = round((c - prev_close) / prev_close * 100, 2) if prev_close else 0.0
+            prev_close = c
+            result.append({
+                'date': item.get('d', ''),
+                'open': o, 'close': c, 'high': h, 'low': l,
+                'volume': v, 'amount': 0.0, 'change_pct': chg,
+            })
+        except (ValueError, TypeError):
+            continue
     return result
 
 
