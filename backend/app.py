@@ -164,10 +164,13 @@ def add_to_watchlist():
     code = data.get('code', '').strip()
     if not code:
         return jsonify({'success': False, 'message': '股票代码不能为空'})
-    stocks = _load_watchlist(user['username'])
-    # normalize
+    # validate stock exists
     prefix, pure = stock_api._normalize_code(code)
     full_code = prefix + pure
+    quotes = stock_api._fetch_sina([full_code])
+    if full_code not in quotes or not quotes[full_code].get('name'):
+        return jsonify({'success': False, 'message': f'股票代码 {pure} 不存在'})
+    stocks = _load_watchlist(user['username'])
     if full_code not in stocks and pure not in stocks:
         stocks.append(full_code)
         _save_watchlist(user['username'], stocks)
