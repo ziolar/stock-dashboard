@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A股股票监控</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ══ Navbar ══════════════════════════════════════════ -->
+  <nav class="navbar">
+    <div class="navbar-logo">股票<span>监控</span></div>
+
+    <div class="navbar-search">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" placeholder="搜索股票代码或名称…" autocomplete="off">
+      <div class="search-dropdown" id="searchDropdown"></div>
+    </div>
+
+    <div class="navbar-spacer"></div>
+    <div class="navbar-actions">
+      <a href="/screener.html" class="btn btn-ghost btn-sm">🔍 选股器</a>
+      <span id="marketStatus" style="font-size:12px;color:var(--text-muted)"></span>
+      <div id="navUser" class="user-info" style="display:none">
+        <div class="user-avatar" id="userAvatar"></div>
+        <span id="userName"></span>
+        <button class="btn btn-ghost btn-sm" id="btnAdminMgr" style="display:none" onclick="location.href='user-management.html'">用户管理</button>
+        <button class="btn btn-ghost btn-sm" id="btnProfile" style="display:none" onclick="location.href='profile.html'">个人中心</button>
+        <button class="btn btn-ghost btn-sm" onclick="App.logout()">退出</button>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btnLogin" onclick="UI.showLogin()">登录</button>
+    </div>
+  </nav>
+
+  <!-- ══ Main ════════════════════════════════════════════ -->
+  <div class="main">
+    <!-- Left column -->
+    <div class="col-left">
+
+      <!-- Watchlist -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📋 自选股</span>
+          <span id="refreshTimer" style="font-size:12px;color:var(--text-muted)"></span>
+        </div>
+        <div class="card-body">
+          <div class="watchlist-container" id="watchlistContainer">
+            <table class="watchlist-table">
+              <thead>
+                <tr>
+                  <th>代码</th>
+                  <th>名称</th>
+                  <th>现价</th>
+                  <th>涨跌幅</th>
+                  <th>买入价</th>
+                  <th>ATR(14)</th>
+                  <th>止盈价</th>
+                  <th>止损价</th>
+                </tr>
+              </thead>
+              <tbody id="watchlistBody">
+                <tr><td colspan="8"><div class="watchlist-empty">请先登录后添加自选股</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="watchlist-add" id="watchlistAdd" style="display:none">
+            <input type="text" id="addStockInput" placeholder="输入股票代码，如 600000" maxlength="6">
+            <button class="btn btn-primary btn-sm" onclick="App.addStock()">添加</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quote detail -->
+      <div class="card" id="quoteDetailCard" style="display:none">
+        <div class="card-header">
+          <span class="card-title" id="detailName">—</span>
+          <span id="detailCode" style="font-size:12px;color:var(--text-muted)"></span>
+        </div>
+        <div class="quote-detail">
+          <div class="quote-item"><span class="quote-label">开盘</span><span class="quote-value" id="dOpen">—</span></div>
+          <div class="quote-item"><span class="quote-label">最高</span><span class="quote-value rise" id="dHigh">—</span></div>
+          <div class="quote-item"><span class="quote-label">最低</span><span class="quote-value fall" id="dLow">—</span></div>
+          <div class="quote-item"><span class="quote-label">昨收</span><span class="quote-value" id="dPrevClose">—</span></div>
+          <div class="quote-item"><span class="quote-label">成交量</span><span class="quote-value" id="dVolume">—</span></div>
+          <div class="quote-item"><span class="quote-label">成交额</span><span class="quote-value" id="dAmount">—</span></div>
+          <div class="quote-item"><span class="quote-label">ATR(14)</span><span class="quote-value" id="dAtr">—</span></div>
+          <div class="quote-item"><span class="quote-label">涨跌额</span><span class="quote-value" id="dChange">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column -->
+    <div class="col-right">
+      <div class="right-panels">
+        <!-- K-line chart -->
+        <div class="card chart-card" id="chartCard">
+          <div class="card-header chart-header">
+            <div>
+              <div class="chart-stock-name" id="chartName">请选择股票</div>
+              <span class="chart-stock-price" id="chartPrice"></span>
+              <span class="chart-change" id="chartChange"></span>
+            </div>
+            <div class="chart-period-tabs">
+              <button class="period-tab active" data-period="daily" onclick="App.changePeriod(this)">日线</button>
+              <button class="period-tab" data-period="weekly" onclick="App.changePeriod(this)">周线</button>
+              <button class="period-tab" data-period="monthly" onclick="App.changePeriod(this)">月线</button>
+            </div>
+          </div>
+          <div class="chart-body">
+            <div class="chart-placeholder" id="chartPlaceholder">
+              <div class="icon">📈</div>
+              <div>点击自选股查看K线图</div>
+            </div>
+            <div id="kline-chart" style="display:none"></div>
+          </div>
+        </div>
+
+        <!-- DeepSeek chat -->
+        <div class="card ds-card" id="dsCard">
+          <div class="card-header">
+            <span class="card-title">🤖 AI 分析助手</span>
+            <button class="btn btn-ghost btn-sm" onclick="DS.clear()" title="清空对话">清空</button>
+          </div>
+          <div class="ds-messages" id="dsMessages">
+            <div class="ds-welcome">
+              <div class="ds-welcome-icon">🤖</div>
+              <div>你好！我是 DeepSeek AI 助手</div>
+              <div class="ds-welcome-sub">可以问我股票分析、技术指标、投资策略等问题</div>
+            </div>
+          </div>
+          <div class="ds-input-area">
+            <textarea id="dsInput" class="ds-input" placeholder="输入问题，Enter 发送，Shift+Enter 换行…" rows="2"></textarea>
+            <button class="btn btn-primary ds-send-btn" id="dsSendBtn" onclick="DS.send()">发送</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Right-click menu ════════════════════════════════ -->
+<div class="context-menu" id="contextMenu">
+  <div class="context-menu-item" data-action="top">⬆ 置顶</div>
+  <div class="context-menu-item danger" data-action="delete">🗑 删除</div>
+</div>
+
+<!-- ══ Login Modal ═════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="loginModal">
+  <div class="modal">
+    <h2>登录</h2>
+    <p>请输入账号密码进入股票监控系统</p>
+    <div class="form-group">
+      <label>用户名</label>
+      <input type="text" id="loginUser" placeholder="用户名" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>密码</label>
+      <input type="password" id="loginPass" placeholder="密码" autocomplete="current-password">
+      <div class="form-error" id="loginError"></div>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="App.login()">登 录</button>
+  </div>
+</div>
+
+<!-- ══ Toast container ═════════════════════════════════ -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="js/app.js"></script>
+<script src="js/deepseek.js"></script>
+</body>
+</html>

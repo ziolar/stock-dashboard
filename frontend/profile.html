@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人中心 - A股监控</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+.page-container { max-width:520px; margin:40px auto; padding:0 16px; display:flex; flex-direction:column; gap:16px; }
+.info-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:16px; }
+.info-item label { font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px; }
+.info-item span  { font-size:14px; font-weight:500; }
+.strength-bar { height:4px; border-radius:2px; background:var(--bg-tertiary); margin-top:6px; }
+.strength-fill { height:100%; border-radius:2px; transition:width 0.3s, background 0.3s; width:0; }
+.strength-text { font-size:11px; margin-top:4px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="navbar">
+    <div class="navbar-logo">股票<span>监控</span></div>
+    <div class="navbar-spacer"></div>
+    <button class="btn btn-ghost btn-sm" onclick="location.href='/'">← 返回主页</button>
+  </nav>
+  <div class="page-container">
+    <div class="card">
+      <div class="card-header"><span class="card-title">👤 个人信息</span></div>
+      <div class="info-grid">
+        <div class="info-item"><label>用户名</label><span id="infoUsername">—</span></div>
+        <div class="info-item"><label>角色</label><span id="infoRole">—</span></div>
+        <div class="info-item"><label>创建时间</label><span id="infoCreated" style="font-size:13px">—</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">🔒 修改密码</span></div>
+      <div class="card-body" style="padding:16px;display:flex;flex-direction:column;gap:14px">
+        <div class="form-group">
+          <label>旧密码</label>
+          <input type="password" id="oldPass" placeholder="请输入旧密码">
+        </div>
+        <div class="form-group">
+          <label>新密码</label>
+          <input type="password" id="newPass" placeholder="至少6位，含字母和数字" oninput="checkStrength()">
+          <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
+          <div class="strength-text" id="strengthText"></div>
+        </div>
+        <div class="form-group">
+          <label>确认新密码</label>
+          <input type="password" id="confirmPass" placeholder="再次输入新密码" oninput="checkMatch()">
+          <div class="form-error" id="matchError">两次密码不一致</div>
+        </div>
+        <div class="form-error" id="pwError"></div>
+        <button class="btn btn-primary" onclick="changePassword()">保存修改</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast-container" id="toastContainer"></div>
+<script>
+function toast(msg, type='info') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`; el.textContent = msg;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+function checkStrength() {
+  const pw = document.getElementById('newPass').value;
+  const fill = document.getElementById('strengthFill');
+  const text = document.getElementById('strengthText');
+  let score = 0;
+  if (pw.length >= 6) score++;
+  if (/[a-zA-Z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (pw.length >= 10 && /[^a-zA-Z\d]/.test(pw)) score++;
+  const levels = [
+    { w:'0%',   c:'transparent', t:'' },
+    { w:'33%',  c:'#e74c3c',     t:'弱' },
+    { w:'66%',  c:'#f39c12',     t:'中' },
+    { w:'100%', c:'#2ecc71',     t:'强' },
+  ];
+  const lvl = levels[Math.min(score, 3)];
+  fill.style.width = lvl.w; fill.style.background = lvl.c;
+  text.textContent = lvl.t; text.style.color = lvl.c;
+}
+
+function checkMatch() {
+  const np = document.getElementById('newPass').value;
+  const cp = document.getElementById('confirmPass').value;
+  const err = document.getElementById('matchError');
+  err.style.display = (cp && np !== cp) ? 'block' : 'none';
+}
+
+async function changePassword() {
+  const oldPass  = document.getElementById('oldPass').value;
+  const newPass  = document.getElementById('newPass').value;
+  const confirm  = document.getElementById('confirmPass').value;
+  const errEl    = document.getElementById('pwError');
+  errEl.style.display = 'none';
+
+  if (!oldPass || !newPass || !confirm) { errEl.textContent = '请填写所有字段'; errEl.style.display = 'block'; return; }
+  if (newPass !== confirm) { errEl.textContent = '两次密码不一致'; errEl.style.display = 'block'; return; }
+  if (newPass.length < 6 || !/[a-zA-Z]/.test(newPass) || !/\d/.test(newPass)) {
+    errEl.textContent = '新密码至少6位，且同时包含字母和数字'; errEl.style.display = 'block'; return;
+  }
+  const r = await fetch('/api/auth/password', {
+    method:'POST', credentials:'include',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ old_password: oldPass, new_password: newPass }),
+  });
+  const data = await r.json();
+  if (data.success) {
+    toast('密码修改成功', 'success');
+    document.getElementById('oldPass').value = '';
+    document.getElementById('newPass').value = '';
+    document.getElementById('confirmPass').value = '';
+    document.getElementById('strengthFill').style.width = '0';
+    document.getElementById('strengthText').textContent = '';
+  } else {
+    errEl.textContent = data.message || '修改失败';
+    errEl.style.display = 'block';
+  }
+}
+
+async function loadProfile() {
+  const r = await fetch('/api/auth/check', { credentials:'include' });
+  const data = await r.json();
+  if (!data.logged_in) { location.href = '/'; return; }
+  if (data.user.role === 'admin') { location.href = '/user-management.html'; return; }
+  document.getElementById('infoUsername').textContent = data.user.username;
+  document.getElementById('infoRole').textContent = '普通用户';
+}
+
+loadProfile();
+</script>
+</body>
+</html>

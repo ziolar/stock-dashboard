@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>选股器 - A股股票监控</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/screener.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="navbar-logo"><a href="/" style="color:inherit">股票<span>监控</span></a></div>
+    <div class="navbar-spacer"></div>
+    <div class="navbar-actions">
+      <a href="/" class="btn btn-ghost btn-sm">← 返回主页</a>
+      <div id="navUser" class="user-info" style="display:none">
+        <div class="user-avatar" id="userAvatar"></div>
+        <span id="userName"></span>
+        <button class="btn btn-ghost btn-sm" onclick="SCR.logout()">退出</button>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btnLogin" onclick="location.href='/'">登录</button>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <div class="scr-layout">
+
+    <!-- Left: strategy list -->
+    <div class="scr-sidebar">
+      <div class="scr-sidebar-header">
+        <span class="card-title">📋 我的策略</span>
+        <button class="btn btn-primary btn-sm" onclick="SCR.newStrategy()">+ 新建</button>
+      </div>
+      <div class="scr-strategy-list" id="strategyList">
+        <div class="scr-empty">暂无策略，点击新建</div>
+      </div>
+    </div>
+
+    <!-- Center: factor editor -->
+    <div class="scr-editor">
+      <div class="scr-editor-header">
+        <div>
+          <input class="scr-name-input" id="strategyName" placeholder="策略名称" value="新策略">
+          <span class="scr-factor-count" id="factorCount">0 个条件</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="SCR.saveStrategy()">💾 保存</button>
+          <button class="btn btn-primary" id="runBtn" onclick="SCR.run()">▶ 运行选股</button>
+        </div>
+      </div>
+
+      <!-- Factor list -->
+      <div class="scr-factors" id="factorList"></div>
+
+      <!-- Add factor -->
+      <div class="scr-add-factor">
+        <select id="addField" class="scr-select">
+          <optgroup label="价格">
+            <option value="price">现价</option>
+            <option value="change_pct">涨跌幅 (%)</option>
+            <option value="high">最高价</option>
+            <option value="low">最低价</option>
+          </optgroup>
+          <optgroup label="均线（价格与均线关系）">
+            <option value="ma5">MA5</option>
+            <option value="ma10">MA10</option>
+            <option value="ma20">MA20</option>
+            <option value="ma60">MA60</option>
+          </optgroup>
+          <optgroup label="成交">
+            <option value="amount">成交额 (亿)</option>
+            <option value="turnover">换手率 (%)</option>
+          </optgroup>
+          <optgroup label="估值">
+            <option value="pe">市盈率 PE</option>
+            <option value="pb">市净率 PB</option>
+            <option value="mktcap">总市值 (亿)</option>
+          </optgroup>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="SCR.addFactor()">+ 添加条件</button>
+      </div>
+
+      <!-- Preset templates -->
+      <div class="scr-presets">
+        <span class="scr-preset-label">快速模板：</span>
+        <button class="scr-preset-btn" onclick="SCR.loadPreset('momentum')">价格突破MA60</button>
+        <button class="scr-preset-btn" onclick="SCR.loadPreset('value')">低估值蓝筹</button>
+        <button class="scr-preset-btn" onclick="SCR.loadPreset('growth')">高换手强势股</button>
+        <button class="scr-preset-btn" onclick="SCR.loadPreset('small')">小市值成长</button>
+      </div>
+    </div>
+
+    <!-- Right: results -->
+    <div class="scr-results">
+      <div class="scr-results-header">
+        <span class="card-title">选股结果</span>
+        <span class="scr-result-count" id="resultCount"></span>
+        <button class="btn btn-ghost btn-sm" id="addAllBtn" style="display:none" onclick="SCR.addAllToWatchlist()">全部加自选</button>
+      </div>
+      <div class="scr-results-body" id="resultsBody">
+        <div class="scr-empty" style="padding:60px 0">设置条件后点击"运行选股"</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Running overlay -->
+<div class="scr-overlay hidden" id="scrOverlay">
+  <div class="scr-overlay-box">
+    <div class="loading-spinner" style="width:32px;height:32px;border-width:3px"></div>
+    <div style="margin-top:16px;font-size:14px;color:var(--text-secondary)">正在扫描全市场股票…</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:6px" id="scrProgress">约需 10-30 秒</div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="js/screener.js"></script>
+</body>
+</html>
