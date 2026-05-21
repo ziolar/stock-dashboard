@@ -299,7 +299,7 @@ def search():
 
 # ── DeepSeek Chat API ───────────────────────────────────────
 
-DEEPSEEK_API_KEY = 'sk-f1a461e497fd4fb492a1b4b43bd8b48b'
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', 'sk-f1a461e497fd4fb492a1b4b43bd8b48b')
 DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions'
 
 @app.route('/api/deepseek/chat', methods=['POST'])
