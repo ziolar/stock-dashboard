@@ -111,16 +111,17 @@
 
 .bkt-textarea {
   width: 100%;
-  min-height: 64px;
+  min-height: 80px;
+  max-height: 400px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   padding: 8px;
   resize: vertical;
   border-radius: 4px;
-  line-height: 1.5;
+  line-height: 1.6;
   box-sizing: border-box;
   transition: border-color var(--transition);
 }
