@@ -1,4 +1,4 @@
-# baostock_api.py — baostock 数据拉取封装，带本地 CSV 缓存
+# baostock_api.py — baostock 数据拉取封装，带 PostgreSQL + 本地 CSV 双层缓存
 import os
 import threading
 import pandas as pd
@@ -14,6 +14,21 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 _bs_lock = threading.Lock()
 _bs_logged_in = False
+
+# Lazy import of DB helpers from app to avoid circular import
+def _db_save(code, rows):
+    try:
+        from app import _pg_save_ohlc
+        _pg_save_ohlc(code, rows)
+    except Exception:
+        pass
+
+def _db_load(code, start_date, end_date):
+    try:
+        from app import _pg_load_ohlc
+        return _pg_load_ohlc(code, start_date, end_date)
+    except Exception:
+        return None
 
 
 def _ensure_login():
@@ -47,18 +62,29 @@ def _cache_path(code: str, start: str, end: str) -> str:
 def get_stock_history(code: str, start_date: str, end_date: str) -> pd.DataFrame | None:
     """
     返回 DataFrame，columns: date,open,high,low,close,volume,amount,pct_chg
-    date 为字符串 'YYYY-MM-DD'，其余为 float
+    优先从 PostgreSQL 读取，其次本地 CSV，最后从 baostock 拉取
     """
     bs_code = _normalize_code(code)
-    cache_file = _cache_path(bs_code, start_date, end_date)
 
+    # 1. Try PostgreSQL
+    db_rows = _db_load(bs_code, start_date, end_date)
+    if db_rows:
+        df = pd.DataFrame(db_rows)
+        return _cast_ohlc(df)
+
+    # 2. Try local CSV
+    cache_file = _cache_path(bs_code, start_date, end_date)
     if os.path.exists(cache_file):
         try:
             df = pd.read_csv(cache_file, dtype=str)
-            return _cast_ohlc(df)
+            result = _cast_ohlc(df)
+            # Backfill to DB
+            _db_save(bs_code, result.to_dict('records'))
+            return result
         except Exception:
             pass
 
+    # 3. Fetch from baostock
     with _bs_lock:
         _ensure_login()
         rs = bs.query_history_k_data_plus(
@@ -78,7 +104,10 @@ def get_stock_history(code: str, start_date: str, end_date: str) -> pd.DataFrame
 
     df = pd.DataFrame(rows, columns=['date', 'open', 'high', 'low', 'close', 'volume', 'amount', 'pct_chg'])
     df.to_csv(cache_file, index=False)
-    return _cast_ohlc(df)
+    result = _cast_ohlc(df)
+    # Save to DB
+    _db_save(bs_code, result.to_dict('records'))
+    return result
 
 
 def _cast_ohlc(df: pd.DataFrame) -> pd.DataFrame:
@@ -94,14 +123,23 @@ def get_index_history(index_code: str, start_date: str, end_date: str) -> pd.Dat
     """
     获取指数历史数据，index_code 如 'sh.000300'（沪深300）
     """
+    # 1. Try PostgreSQL
+    db_rows = _db_load(index_code, start_date, end_date)
+    if db_rows:
+        return _cast_ohlc(pd.DataFrame(db_rows))
+
+    # 2. Try local CSV
     cache_file = _cache_path(index_code.replace('.', '_') + '_idx', start_date, end_date)
     if os.path.exists(cache_file):
         try:
             df = pd.read_csv(cache_file, dtype=str)
-            return _cast_ohlc(df)
+            result = _cast_ohlc(df)
+            _db_save(index_code, result.to_dict('records'))
+            return result
         except Exception:
             pass
 
+    # 3. Fetch from baostock
     with _bs_lock:
         _ensure_login()
         rs = bs.query_history_k_data_plus(
@@ -121,7 +159,9 @@ def get_index_history(index_code: str, start_date: str, end_date: str) -> pd.Dat
 
     df = pd.DataFrame(rows, columns=['date', 'open', 'high', 'low', 'close', 'volume', 'amount', 'pct_chg'])
     df.to_csv(cache_file, index=False)
-    return _cast_ohlc(df)
+    result = _cast_ohlc(df)
+    _db_save(index_code, result.to_dict('records'))
+    return result
 
 
 def get_hs300_stocks(date: str = None) -> list[str]:

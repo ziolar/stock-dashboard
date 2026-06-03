@@ -14,6 +14,145 @@ import auth
 import stock_api
 import screener as screener_engine
 
+# ── PostgreSQL setup ─────────────────────────────────────────
+_pg_pool = None
+
+def _get_pg():
+    global _pg_pool
+    if _pg_pool is None and os.environ.get('DATABASE_URL'):
+        from psycopg2 import pool as pg_pool
+        _pg_pool = pg_pool.ThreadedConnectionPool(
+            1, 10,
+            dsn=os.environ['DATABASE_URL'],
+            sslmode='require',
+        )
+        _init_pg_tables()
+    return _pg_pool
+
+def _init_pg_tables():
+    p = _pg_pool
+    if not p:
+        return
+    conn = p.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS backtest_strategies (
+                    id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    data JSONB NOT NULL,
+                    saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (id, username)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS stock_ohlc (
+                    code TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    open REAL, high REAL, low REAL, close REAL,
+                    volume REAL, amount REAL, pct_chg REAL,
+                    PRIMARY KEY (code, date)
+                )
+            """)
+        conn.commit()
+    finally:
+        p.putconn(conn)
+
+# Try to init on startup (non-fatal if DB not available)
+try:
+    _get_pg()
+except Exception as _e:
+    print(f'[db] init skipped: {_e}')
+
+def _pg_load_bt_strategies(username: str) -> list:
+    p = _get_pg()
+    if not p:
+        return []
+    conn = p.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                'SELECT data FROM backtest_strategies WHERE username=%s ORDER BY saved_at DESC',
+                (username,)
+            )
+            return [row[0] for row in cur.fetchall()]
+    finally:
+        p.putconn(conn)
+
+def _pg_save_bt_strategy(username: str, strategy: dict):
+    p = _get_pg()
+    if not p:
+        return
+    import json as _json
+    conn = p.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO backtest_strategies (id, username, data, saved_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (id, username) DO UPDATE SET data=%s, saved_at=NOW()
+            """, (strategy['id'], username, _json.dumps(strategy), _json.dumps(strategy)))
+        conn.commit()
+    finally:
+        p.putconn(conn)
+
+def _pg_delete_bt_strategy(username: str, sid: str):
+    p = _get_pg()
+    if not p:
+        return
+    conn = p.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                'DELETE FROM backtest_strategies WHERE id=%s AND username=%s',
+                (sid, username)
+            )
+        conn.commit()
+    finally:
+        p.putconn(conn)
+
+def _pg_save_ohlc(code: str, rows: list[dict]):
+    """Bulk upsert OHLC rows. rows = list of dicts with keys: date,open,high,low,close,volume,amount,pct_chg"""
+    p = _get_pg()
+    if not p or not rows:
+        return
+    conn = p.getconn()
+    try:
+        with conn.cursor() as cur:
+            for r in rows:
+                cur.execute("""
+                    INSERT INTO stock_ohlc (code,date,open,high,low,close,volume,amount,pct_chg)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (code,date) DO NOTHING
+                """, (code, r['date'], r.get('open'), r.get('high'), r.get('low'),
+                      r.get('close'), r.get('volume'), r.get('amount'), r.get('pct_chg')))
+        conn.commit()
+    finally:
+        p.putconn(conn)
+
+def _pg_load_ohlc(code: str, start_date: str, end_date: str):
+    """Returns list of dicts or None if no rows found."""
+    p = _get_pg()
+    if not p:
+        return None
+    conn = p.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT date,open,high,low,close,volume,amount,pct_chg
+                FROM stock_ohlc
+                WHERE code=%s AND date>=%s AND date<=%s
+                ORDER BY date
+            """, (code, start_date, end_date))
+            rows = cur.fetchall()
+            if not rows:
+                return None
+            return [{'date': r[0], 'open': r[1], 'high': r[2], 'low': r[3],
+                     'close': r[4], 'volume': r[5], 'amount': r[6], 'pct_chg': r[7]}
+                    for r in rows]
+    finally:
+        p.putconn(conn)
+
 # ATR cache: code -> (atr_value, timestamp)
 _atr_cache: dict = {}
 _atr_cache_ttl = 1800  # 30 minutes
@@ -461,6 +600,13 @@ def loop_condition(date, context):
 
 
 def _load_bt_strategies(username: str) -> list:
+    try:
+        rows = _pg_load_bt_strategies(username)
+        if _get_pg() is not None:
+            return rows or []
+    except Exception:
+        pass
+    # JSON fallback
     if not os.path.exists(BT_STRATEGIES_PATH):
         return []
     with open(BT_STRATEGIES_PATH, encoding='utf-8') as f:
@@ -469,6 +615,14 @@ def _load_bt_strategies(username: str) -> list:
 
 
 def _save_bt_strategies(username: str, strategies: list):
+    # Legacy: called with full list — upsert each item
+    for s in strategies:
+        try:
+            _pg_save_bt_strategy(username, s)
+        except Exception:
+            pass
+    if _get_pg() is not None:
+        return
     all_s = {}
     if os.path.exists(BT_STRATEGIES_PATH):
         with open(BT_STRATEGIES_PATH, encoding='utf-8') as f:
@@ -497,18 +651,18 @@ def save_bt_strategy():
     if not user:
         return jsonify({'success': False, 'message': '请先登录'}), 401
     data = request.get_json() or {}
-    strategies = _load_bt_strategies(user['username'])
     strategy = data.get('strategy', {})
     if not strategy.get('name'):
         return jsonify({'success': False, 'message': '策略名称不能为空'}), 400
-    # Update existing or append
     strategy['id'] = strategy.get('id') or str(uuid.uuid4())[:8]
-    idx = next((i for i, s in enumerate(strategies) if s.get('id') == strategy['id']), -1)
-    if idx >= 0:
-        strategies[idx] = strategy
-    else:
-        strategies.append(strategy)
-    _save_bt_strategies(user['username'], strategies)
+    try:
+        _pg_save_bt_strategy(user['username'], strategy)
+        if _get_pg() is not None:
+            return jsonify({'success': True, 'strategy': strategy})
+    except Exception:
+        pass
+    # JSON fallback
+    _save_bt_strategies(user['username'], [strategy])
     return jsonify({'success': True, 'strategy': strategy})
 
 
@@ -517,9 +671,20 @@ def delete_bt_strategy(sid):
     user = session.get('user')
     if not user:
         return jsonify({'success': False, 'message': '请先登录'}), 401
-    strategies = _load_bt_strategies(user['username'])
-    strategies = [s for s in strategies if s.get('id') != sid]
-    _save_bt_strategies(user['username'], strategies)
+    try:
+        _pg_delete_bt_strategy(user['username'], sid)
+        if _get_pg() is not None:
+            return jsonify({'success': True})
+    except Exception:
+        pass
+    # JSON fallback
+    all_s = {}
+    if os.path.exists(BT_STRATEGIES_PATH):
+        with open(BT_STRATEGIES_PATH, encoding='utf-8') as f:
+            all_s = json.load(f)
+    all_s[user['username']] = [s for s in all_s.get(user['username'], []) if s.get('id') != sid]
+    with open(BT_STRATEGIES_PATH, 'w', encoding='utf-8') as f:
+        json.dump(all_s, f, ensure_ascii=False, indent=2)
     return jsonify({'success': True})
 
 
