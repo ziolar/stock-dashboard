@@ -2,12 +2,13 @@
 A股股票监控 - Flask 后端
 """
 from __future__ import annotations
-from flask import Flask, request, jsonify, session, send_from_directory
+from flask import Flask, request, jsonify, session, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 import os
 import json
 import time
 import threading
+import uuid
 
 import auth
 import stock_api
@@ -384,6 +385,277 @@ def run_screener():
         return jsonify({'success': True, 'results': results, 'total': len(results)})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ── Backtest APIs ────────────────────────────────────────────
+
+BT_STRATEGIES_PATH = os.path.join(os.path.dirname(__file__), 'data', 'backtest_strategies.json')
+
+# DeepSeek prompts per module
+_BT_SYSTEM = """你是量化交易策略代码生成器。将用户的自然语言策略描述转换为符合指定函数签名的 Python 函数。
+只输出函数代码，不要任何解释、注释或 markdown 代码块。
+
+可用库：pd（pandas）、np（numpy）、math
+context 对象字段：
+  context['get_history'](code, n) -> DataFrame  # 最近n天，columns: date,open,high,low,close,volume,amount
+  context['universe']   -> list[str]   # 当日股票池（baostock格式，如 'sh.600519'）
+  context['positions']  -> dict        # 当前持仓 {code: {shares, cost, value, price, entry_date, name}}
+  context['cash']       -> float       # 可用现金
+  context['total_value']-> float       # 总资产
+  context['date']       -> str         # 当前日期 'YYYY-MM-DD'
+"""
+
+_BT_EXAMPLES = {
+    'select': '''示例输入：价格突破布林带中轨且价格大于60日均线
+示例输出：
+def select_stocks(date, context):
+    results = []
+    for code in context['universe']:
+        df = context['get_history'](code, 65)
+        if df is None or len(df) < 65: continue
+        close = df['close']
+        ma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        mid = ma20
+        ma60 = close.rolling(60).mean()
+        if close.iloc[-1] > mid.iloc[-1] and close.iloc[-1] > ma60.iloc[-1]:
+            results.append(code)
+    return results
+
+请生成 select_stocks(date, context) 函数：''',
+
+    'buy': '''示例输入：平均分配仓位，最多持有5只，全仓买入
+示例输出：
+def should_buy(date, code, context):
+    positions = context['positions']
+    if code in positions:
+        return 0.0
+    n_pos = len(positions)
+    max_pos = 5
+    if n_pos >= max_pos:
+        return 0.0
+    return 1.0 / max_pos
+
+请生成 should_buy(date, code, context) 函数，返回 0~1 的买入仓位比例：''',
+
+    'sell': '''示例输入：价格跌破20日均线时清仓
+示例输出：
+def should_sell(date, code, position, context):
+    df = context['get_history'](code, 25)
+    if df is None or len(df) < 20: return 0.0
+    close = df['close']
+    ma20 = close.rolling(20).mean().iloc[-1]
+    if close.iloc[-1] < ma20:
+        return 1.0
+    return 0.0
+
+请生成 should_sell(date, code, position, context) 函数，返回 0~1 的卖出比例：''',
+
+    'loop': '''示例输入：每天执行策略
+示例输出：
+def loop_condition(date, context):
+    return True
+
+请生成 loop_condition(date, context) 函数，返回 True/False 决定当天是否执行买卖逻辑：''',
+}
+
+
+def _load_bt_strategies(username: str) -> list:
+    if not os.path.exists(BT_STRATEGIES_PATH):
+        return []
+    with open(BT_STRATEGIES_PATH, encoding='utf-8') as f:
+        all_s = json.load(f)
+    return all_s.get(username, [])
+
+
+def _save_bt_strategies(username: str, strategies: list):
+    all_s = {}
+    if os.path.exists(BT_STRATEGIES_PATH):
+        with open(BT_STRATEGIES_PATH, encoding='utf-8') as f:
+            all_s = json.load(f)
+    all_s[username] = strategies
+    with open(BT_STRATEGIES_PATH, 'w', encoding='utf-8') as f:
+        json.dump(all_s, f, ensure_ascii=False, indent=2)
+
+
+@app.route('/backtest')
+def backtest_page():
+    return send_from_directory('../frontend', 'backtest.html')
+
+
+@app.route('/api/backtest/strategies', methods=['GET'])
+def get_bt_strategies():
+    user = session.get('user')
+    if not user:
+        return jsonify({'success': False, 'message': '请先登录'}), 401
+    return jsonify({'success': True, 'strategies': _load_bt_strategies(user['username'])})
+
+
+@app.route('/api/backtest/strategies', methods=['POST'])
+def save_bt_strategy():
+    user = session.get('user')
+    if not user:
+        return jsonify({'success': False, 'message': '请先登录'}), 401
+    data = request.get_json() or {}
+    strategies = _load_bt_strategies(user['username'])
+    strategy = data.get('strategy', {})
+    if not strategy.get('name'):
+        return jsonify({'success': False, 'message': '策略名称不能为空'}), 400
+    # Update existing or append
+    strategy['id'] = strategy.get('id') or str(uuid.uuid4())[:8]
+    idx = next((i for i, s in enumerate(strategies) if s.get('id') == strategy['id']), -1)
+    if idx >= 0:
+        strategies[idx] = strategy
+    else:
+        strategies.append(strategy)
+    _save_bt_strategies(user['username'], strategies)
+    return jsonify({'success': True, 'strategy': strategy})
+
+
+@app.route('/api/backtest/strategies/<sid>', methods=['DELETE'])
+def delete_bt_strategy(sid):
+    user = session.get('user')
+    if not user:
+        return jsonify({'success': False, 'message': '请先登录'}), 401
+    strategies = _load_bt_strategies(user['username'])
+    strategies = [s for s in strategies if s.get('id') != sid]
+    _save_bt_strategies(user['username'], strategies)
+    return jsonify({'success': True})
+
+
+@app.route('/api/backtest/translate', methods=['POST'])
+def bt_translate():
+    user = session.get('user')
+    if not user:
+        return jsonify({'success': False, 'message': '请先登录'}), 401
+    if not DEEPSEEK_API_KEY:
+        return jsonify({'success': False, 'message': '未配置 DEEPSEEK_API_KEY'}), 500
+
+    data = request.get_json() or {}
+    module = data.get('module', 'select')  # select|buy|sell|loop
+    text = (data.get('text') or '').strip()
+    if not text:
+        return jsonify({'success': False, 'message': '请输入策略描述'}), 400
+
+    example = _BT_EXAMPLES.get(module, _BT_EXAMPLES['select'])
+    user_msg = f'{example}\n用户描述：{text}'
+
+    try:
+        import requests as _requests
+        resp = _requests.post(
+            DEEPSEEK_API_URL,
+            headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {DEEPSEEK_API_KEY}'},
+            json={
+                'model': 'deepseek-chat',
+                'messages': [
+                    {'role': 'system', 'content': _BT_SYSTEM},
+                    {'role': 'user', 'content': user_msg},
+                ],
+                'stream': False,
+                'max_tokens': 1500,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        code = resp.json()['choices'][0]['message']['content'].strip()
+        # Strip markdown fences if present
+        if code.startswith('```'):
+            code = '\n'.join(code.split('\n')[1:])
+        if code.endswith('```'):
+            code = '\n'.join(code.split('\n')[:-1])
+        return jsonify({'success': True, 'code': code.strip()})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'AI 转换失败: {e}'}), 500
+
+
+@app.route('/api/backtest/run', methods=['POST'])
+def bt_run():
+    user = session.get('user')
+    if not user:
+        return jsonify({'success': False, 'message': '请先登录'}), 401
+
+    data = request.get_json() or {}
+    strategy = data.get('strategy', {})
+    universe_type = data.get('universe', 'hs300')
+    custom_codes = data.get('custom_codes', [])
+    start_date = data.get('start_date', '')
+    end_date = data.get('end_date', '')
+    initial_capital = float(data.get('initial_capital', 1_000_000))
+
+    if not start_date or not end_date:
+        return jsonify({'success': False, 'message': '请选择回测时间区间'}), 400
+
+    def generate():
+        try:
+            import backtester
+            result = [None]
+            error = [None]
+
+            def progress_cb(pct, msg):
+                yield_data = json.dumps({'type': 'progress', 'pct': round(pct, 3), 'msg': msg})
+                # We can't yield from inside a callback, so store progress in a queue
+                pass
+
+            # Run synchronously (Flask SSE via generator)
+            import queue
+            q = queue.Queue()
+
+            def run_in_thread():
+                try:
+                    def cb(pct, msg):
+                        q.put(('progress', pct, msg))
+                    r = backtester.run_backtest(
+                        select_code=strategy.get('select_code', ''),
+                        buy_code=strategy.get('buy_code', ''),
+                        sell_code=strategy.get('sell_code', ''),
+                        loop_code=strategy.get('loop_code', ''),
+                        universe_type=universe_type,
+                        custom_codes=custom_codes,
+                        start_date=start_date,
+                        end_date=end_date,
+                        initial_capital=initial_capital,
+                        progress_cb=cb,
+                    )
+                    q.put(('done', r))
+                except Exception as ex:
+                    q.put(('error', str(ex)))
+
+            t = threading.Thread(target=run_in_thread, daemon=True)
+            t.start()
+
+            timeout_at = time.time() + 300  # 5 min timeout
+            while True:
+                try:
+                    item = q.get(timeout=1.0)
+                except queue.Empty:
+                    if time.time() > timeout_at:
+                        yield f"data: {json.dumps({'type':'error','message':'回测超时'})}\n\n"
+                        return
+                    yield f"data: {json.dumps({'type':'heartbeat'})}\n\n"
+                    continue
+
+                if item[0] == 'progress':
+                    _, pct, msg = item
+                    yield f"data: {json.dumps({'type':'progress','pct':pct,'msg':msg})}\n\n"
+                elif item[0] == 'done':
+                    _, result_data = item
+                    yield f"data: {json.dumps({'type':'done','result':result_data})}\n\n"
+                    return
+                elif item[0] == 'error':
+                    _, err_msg = item
+                    yield f"data: {json.dumps({'type':'error','message':err_msg})}\n\n"
+                    return
+        except Exception as e:
+            yield f"data: {json.dumps({'type':'error','message':str(e)})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+        }
+    )
 
 
 if __name__ == '__main__':

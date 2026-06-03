@@ -1,0 +1,427 @@
+/* backtest.css — 回测页面样式，复用 style.css 变量 */
+
+.bkt-layout {
+  display: flex;
+  height: calc(100vh - 52px);
+  overflow: hidden;
+}
+
+/* ── 左侧策略搭建 ──────────────────────────────────── */
+.bkt-sidebar {
+  width: 380px;
+  min-width: 320px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bkt-sidebar-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.bkt-sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bkt-sidebar-footer {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 策略选择下拉 */
+.bkt-strategy-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bkt-strategy-select select {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+/* 模块卡片 */
+.bkt-module {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.bkt-module-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: default;
+}
+
+.bkt-module-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.bkt-module-num.num-1 { background: #1d4ed8; color: #fff; }
+.bkt-module-num.num-2 { background: #065f46; color: #fff; }
+.bkt-module-num.num-3 { background: #92400e; color: #fff; }
+.bkt-module-num.num-4 { background: #4c1d95; color: #fff; }
+
+.bkt-module-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.bkt-module-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bkt-textarea {
+  width: 100%;
+  min-height: 64px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 8px;
+  resize: vertical;
+  border-radius: 4px;
+  line-height: 1.5;
+  box-sizing: border-box;
+  transition: border-color var(--transition);
+}
+
+.bkt-textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.bkt-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.bkt-module-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.bkt-btn-translate {
+  flex: 1;
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  padding: 5px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.bkt-btn-translate:hover { opacity: 0.85; }
+.bkt-btn-translate:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.bkt-btn-toggle-code {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.bkt-btn-toggle-code:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.bkt-code-preview {
+  display: none;
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 11px;
+  color: #e6edf3;
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+
+.bkt-code-preview.visible { display: block; }
+
+.bkt-translate-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-height: 16px;
+}
+
+.bkt-translate-status.error { color: var(--accent-red); }
+.bkt-translate-status.ok { color: #34d399; }
+
+/* ── 右侧回测结果 ──────────────────────────────────── */
+.bkt-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 回测配置区 */
+.bkt-config {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.bkt-config-title {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.bkt-config-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.bkt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bkt-field label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.bkt-field select,
+.bkt-field input[type="date"],
+.bkt-field input[type="number"],
+.bkt-field input[type="text"] {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  border-radius: 4px;
+  min-width: 120px;
+}
+
+.bkt-field input:focus,
+.bkt-field select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.bkt-custom-codes {
+  display: none;
+}
+
+.bkt-custom-codes.visible {
+  display: flex;
+}
+
+.bkt-btn-run {
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  padding: 7px 20px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+
+.bkt-btn-run:hover { opacity: 0.85; }
+.bkt-btn-run:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 进度条 */
+.bkt-progress-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bkt-progress-wrap.visible { display: flex; }
+
+.bkt-progress-bar-bg {
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.bkt-progress-bar {
+  height: 100%;
+  background: var(--accent-blue);
+  width: 0%;
+  transition: width 0.3s ease;
+  border-radius: 3px;
+}
+
+.bkt-progress-msg {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.bkt-error-msg {
+  display: none;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.bkt-error-msg.visible { display: block; }
+
+/* 收益曲线 */
+.bkt-chart-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  display: none;
+}
+
+.bkt-chart-card.visible { display: block; }
+
+.bkt-card-title {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+#bkt-chart {
+  width: 100%;
+  height: 280px;
+}
+
+/* 指标卡片 */
+.bkt-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  display: none;
+}
+
+.bkt-metrics-grid.visible { display: grid; }
+
+.bkt-metric-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+}
+
+.bkt-metric-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.bkt-metric-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.bkt-metric-value.positive { color: var(--accent-red); }
+.bkt-metric-value.negative { color: #34d399; }
+
+/* 交易记录 */
+.bkt-trades-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  display: none;
+}
+
+.bkt-trades-card.visible { display: block; }
+
+.bkt-trades-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.bkt-trades-table th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.bkt-trades-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.bkt-trades-table tr:last-child td { border-bottom: none; }
+.bkt-trades-table tr:hover td { background: var(--bg-primary); }
+
+.trade-buy  { color: var(--accent-red); font-weight: 600; }
+.trade-sell { color: #34d399; font-weight: 600; }
+.trade-pnl-pos { color: var(--accent-red); }
+.trade-pnl-neg { color: #34d399; }

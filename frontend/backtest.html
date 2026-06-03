@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>策略回测 - A股股票监控</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/backtest.css">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+<div class="app">
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="navbar-logo"><a href="/" style="color:inherit">股票<span>监控</span></a></div>
+    <div class="navbar-spacer"></div>
+    <div class="navbar-actions">
+      <a href="/" class="btn btn-ghost btn-sm">← 主页</a>
+      <a href="/screener.html" class="btn btn-ghost btn-sm">🔍 选股器</a>
+      <a href="/backtest" class="btn btn-ghost btn-sm" style="color:var(--accent-blue)">📈 回测</a>
+      <div id="navUser" class="user-info" style="display:none">
+        <div class="user-avatar" id="userAvatar"></div>
+        <span id="userName"></span>
+        <button class="btn btn-ghost btn-sm" onclick="BKT.logout()">退出</button>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btnLogin" onclick="location.href='/'">登录</button>
+    </div>
+  </nav>
+
+  <!-- Main layout -->
+  <div class="bkt-layout">
+
+    <!-- ── 左侧：策略搭建 ── -->
+    <div class="bkt-sidebar">
+      <div class="bkt-sidebar-header">
+        <span class="card-title">⚙️ 策略搭建</span>
+      </div>
+
+      <div class="bkt-sidebar-body">
+
+        <!-- 已保存策略 -->
+        <div class="bkt-strategy-select">
+          <select id="bkt-strategy-list" onchange="BKT.loadStrategy(this.value)">
+            <option value="">— 选择已保存策略 —</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="BKT.deleteStrategy()" title="删除当前策略">🗑</button>
+        </div>
+
+        <!-- ① 选股策略 -->
+        <div class="bkt-module" id="mod-select">
+          <div class="bkt-module-header">
+            <div class="bkt-module-num num-1">①</div>
+            <span class="bkt-module-title">选股策略</span>
+          </div>
+          <div class="bkt-module-body">
+            <textarea class="bkt-textarea" id="txt-select"
+              placeholder="例：价格突破布林带中轨，且价格大于60日均线"></textarea>
+            <div class="bkt-module-actions">
+              <button class="bkt-btn-translate" onclick="BKT.translate('select')">
+                ✨ 生成代码
+              </button>
+              <button class="bkt-btn-toggle-code" onclick="BKT.toggleCode('select')">
+                查看代码
+              </button>
+            </div>
+            <div class="bkt-translate-status" id="st-select"></div>
+            <pre class="bkt-code-preview" id="code-select"></pre>
+          </div>
+        </div>
+
+        <!-- ② 买入策略 -->
+        <div class="bkt-module" id="mod-buy">
+          <div class="bkt-module-header">
+            <div class="bkt-module-num num-2">②</div>
+            <span class="bkt-module-title">买入策略</span>
+          </div>
+          <div class="bkt-module-body">
+            <textarea class="bkt-textarea" id="txt-buy"
+              placeholder="例：平均分配仓位，最多持有5只股票，等权买入"></textarea>
+            <div class="bkt-module-actions">
+              <button class="bkt-btn-translate" onclick="BKT.translate('buy')">
+                ✨ 生成代码
+              </button>
+              <button class="bkt-btn-toggle-code" onclick="BKT.toggleCode('buy')">
+                查看代码
+              </button>
+            </div>
+            <div class="bkt-translate-status" id="st-buy"></div>
+            <pre class="bkt-code-preview" id="code-buy"></pre>
+          </div>
+        </div>
+
+        <!-- ③ 卖出策略 -->
+        <div class="bkt-module" id="mod-sell">
+          <div class="bkt-module-header">
+            <div class="bkt-module-num num-3">③</div>
+            <span class="bkt-module-title">卖出策略</span>
+          </div>
+          <div class="bkt-module-body">
+            <textarea class="bkt-textarea" id="txt-sell"
+              placeholder="例：价格跌破60日均线时清仓；或持仓亏损超过8%止损"></textarea>
+            <div class="bkt-module-actions">
+              <button class="bkt-btn-translate" onclick="BKT.translate('sell')">
+                ✨ 生成代码
+              </button>
+              <button class="bkt-btn-toggle-code" onclick="BKT.toggleCode('sell')">
+                查看代码
+              </button>
+            </div>
+            <div class="bkt-translate-status" id="st-sell"></div>
+            <pre class="bkt-code-preview" id="code-sell"></pre>
+          </div>
+        </div>
+
+        <!-- ④ 循环逻辑 -->
+        <div class="bkt-module" id="mod-loop">
+          <div class="bkt-module-header">
+            <div class="bkt-module-num num-4">④</div>
+            <span class="bkt-module-title">循环逻辑</span>
+          </div>
+          <div class="bkt-module-body">
+            <textarea class="bkt-textarea" id="txt-loop"
+              placeholder="例：每天执行策略；或仅在每月第一个交易日执行"></textarea>
+            <div class="bkt-module-actions">
+              <button class="bkt-btn-translate" onclick="BKT.translate('loop')">
+                ✨ 生成代码
+              </button>
+              <button class="bkt-btn-toggle-code" onclick="BKT.toggleCode('loop')">
+                查看代码
+              </button>
+            </div>
+            <div class="bkt-translate-status" id="st-loop"></div>
+            <pre class="bkt-code-preview" id="code-loop"></pre>
+          </div>
+        </div>
+
+      </div><!-- /sidebar-body -->
+
+      <div class="bkt-sidebar-footer">
+        <input type="text" id="bkt-strategy-name" placeholder="策略名称"
+          style="flex:1;background:var(--bg-primary);border:1px solid var(--border);color:var(--text-primary);padding:6px 8px;font-family:inherit;font-size:12px;border-radius:4px;">
+        <button class="btn btn-ghost btn-sm" onclick="BKT.saveStrategy()">💾 保存</button>
+        <button class="btn btn-primary btn-sm" onclick="BKT.run()" id="bkt-run-btn-sidebar">▶ 运行回测</button>
+      </div>
+    </div><!-- /sidebar -->
+
+    <!-- ── 右侧：回测结果 ── -->
+    <div class="bkt-main">
+
+      <!-- 回测配置 -->
+      <div class="bkt-config">
+        <div class="bkt-config-title">回测配置</div>
+        <div class="bkt-config-grid">
+          <div class="bkt-field">
+            <label>标的范围</label>
+            <select id="bkt-universe" onchange="BKT.onUniverseChange()">
+              <option value="hs300">沪深300</option>
+              <option value="zz500">中证500</option>
+              <option value="custom">自定义</option>
+            </select>
+          </div>
+          <div class="bkt-field bkt-custom-codes" id="bkt-custom-wrap">
+            <label>自定义股票（逗号分隔）</label>
+            <input type="text" id="bkt-custom-codes" placeholder="600519,000858,300750">
+          </div>
+          <div class="bkt-field">
+            <label>开始日期</label>
+            <input type="date" id="bkt-start-date" value="2023-01-01">
+          </div>
+          <div class="bkt-field">
+            <label>结束日期</label>
+            <input type="date" id="bkt-end-date">
+          </div>
+          <div class="bkt-field">
+            <label>初始资金（万元）</label>
+            <input type="number" id="bkt-capital" value="100" min="1" style="width:100px">
+          </div>
+          <div class="bkt-field">
+            <button class="bkt-btn-run" id="bkt-run-btn" onclick="BKT.run()">▶ 运行回测</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 进度 -->
+      <div class="bkt-progress-wrap" id="bkt-progress">
+        <div class="bkt-progress-bar-bg">
+          <div class="bkt-progress-bar" id="bkt-progress-bar"></div>
+        </div>
+        <div class="bkt-progress-msg" id="bkt-progress-msg">准备中…</div>
+      </div>
+
+      <!-- 错误提示 -->
+      <div class="bkt-error-msg" id="bkt-error"></div>
+
+      <!-- 指标卡片 -->
+      <div class="bkt-metrics-grid" id="bkt-metrics"></div>
+
+      <!-- 收益曲线 -->
+      <div class="bkt-chart-card" id="bkt-chart-card">
+        <div class="bkt-card-title">收益曲线</div>
+        <div id="bkt-chart"></div>
+      </div>
+
+      <!-- 交易记录 -->
+      <div class="bkt-trades-card" id="bkt-trades-card">
+        <div class="bkt-card-title">交易记录 <span id="bkt-trade-count" style="color:var(--text-muted);font-size:11px"></span></div>
+        <div style="overflow-x:auto">
+          <table class="bkt-trades-table" id="bkt-trades-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>代码</th>
+                <th>名称</th>
+                <th>方向</th>
+                <th>价格</th>
+                <th>股数</th>
+                <th>金额</th>
+                <th>盈亏</th>
+              </tr>
+            </thead>
+            <tbody id="bkt-trades-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /layout -->
+
+</div><!-- /app -->
+<script src="js/backtest.js"></script>
+</body>
+</html>
