@@ -5,3 +5,4 @@ gunicorn
 baostock
 pandas
 numpy
+psycopg2-binary
